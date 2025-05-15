@@ -16,11 +16,9 @@ def detect_and_save_license_plates(input_dir, output_dir=None, conf_threshold=0.
     start_time_total = time.time()
     model = YOLO("model/license_plate_detector.pt")
     
-    # Performance optimization: Set model to inference mode
     model.model.eval()
     torch.set_grad_enabled(False)
     if torch.cuda.is_available():
-        # Optimize CUDA performance
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.deterministic = False
     
@@ -29,8 +27,7 @@ def detect_and_save_license_plates(input_dir, output_dir=None, conf_threshold=0.
     
     count = 0
     
-    # Process images in batches for better performance
-    batch_size = 4  # Adjust based on available GPU memory
+    batch_size = 4
     for i in range(0, len(image_files), batch_size):
         batch_paths = image_files[i:i+batch_size]
         batch_images = []
@@ -45,7 +42,6 @@ def detect_and_save_license_plates(input_dir, output_dir=None, conf_threshold=0.
         if not batch_images:
             continue
             
-        # Process the batch at once
         results = model(batch_images, conf=conf_threshold)
         
         for idx, result in enumerate(results):
@@ -56,27 +52,23 @@ def detect_and_save_license_plates(input_dir, output_dir=None, conf_threshold=0.
                 continue
                 
             for box in boxes:
-                # Extract box coordinates with error handling
                 try:
                     x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
                     
-                    # Ensure coordinates are valid to prevent crashes
                     h, w = original_img.shape[:2]
                     x1, y1 = max(0, x1), max(0, y1)
                     x2, y2 = min(w, x2), min(h, y2)
                     
                     if x2 <= x1 or y2 <= y1:
-                        continue  # Skip invalid boxes
+                        continue
                         
                     plate_img = original_img[y1:y2, x1:x2]
                     output_file_path = output_path / img_path.name
                     cv2.imwrite(str(output_file_path), plate_img)
                     count += 1
                     
-                    # Once we find a plate for this image, we can skip checking other boxes
                     break
                 except (IndexError, ValueError) as e:
-                    # Skip problematic boxes
                     continue
     
     total_elapsed_time = time.time() - start_time_total

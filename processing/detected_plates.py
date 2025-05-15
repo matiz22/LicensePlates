@@ -13,10 +13,8 @@ def preprocess_image(image_path):
     if img is None:
         return None
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    # Use CLAHE for better contrast before thresholding
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     gray = clahe.apply(gray)
-    # Apply Otsu thresholding
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
 
@@ -46,7 +44,6 @@ def process_ocr_results(ocr_result, best_conf=0, detected_text="", raw_detected_
 
 def process_detected_plates(output_dir, annotations_dict, lang='en'):
     total_start_time = time.time()
-    # Initialize OCR once with optimized parameters
     ocr = PaddleOCR(use_gpu=True, use_angle_cls=True, lang=lang, show_log=False)
     results = {
         'total': 0,
@@ -78,43 +75,33 @@ def process_detected_plates(output_dir, annotations_dict, lang='en'):
         image_start_time = time.time()
         
         try:
-            # Read the original image
             img = cv2.imread(image_path)
             if img is None:
                 raise Exception("Image not found")
             
-            # Create multiple processing variants to maximize accuracy
-            # 1. Original image
             variants = [img]
             
-            # 2. Binary image with CLAHE
             binary_img = preprocess_image(image_path)
             if binary_img is not None:
                 variants.append(binary_img)
             
-            # 3. Enhanced grayscale with sharpening
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
             sharp_gray = cv2.filter2D(gray, -1, kernel)
             sharp_img = cv2.cvtColor(sharp_gray, cv2.COLOR_GRAY2BGR)
             variants.append(sharp_img)
             
-            # Process all variants in memory
             for v in variants:
-                # Encode image to memory buffer instead of temp file
                 success, encoded_img = cv2.imencode('.jpg', v)
                 if not success:
                     continue
                 
-                # Process OCR on image bytes
                 img_bytes = np.array(encoded_img).tobytes()
                 ocr_result = ocr.ocr(img_bytes, cls=True)
                 
-                # Process results
                 curr_best_conf, curr_detected_text, curr_raw_detected_text = process_ocr_results(
                     ocr_result, 0, "", "")
                 
-                # Keep the highest confidence result
                 if curr_best_conf > best_conf:
                     best_conf = curr_best_conf
                     detected_text = curr_detected_text
@@ -127,13 +114,11 @@ def process_detected_plates(output_dir, annotations_dict, lang='en'):
         image_process_time = time.time() - image_start_time
         total_ocr_time += image_process_time
         
-        # Update timing stats
         if image_process_time < results['timing']['fastest_image']['time']:
             results['timing']['fastest_image'] = {'file': image_file, 'time': image_process_time}
         if image_process_time > results['timing']['slowest_image']['time']:
             results['timing']['slowest_image'] = {'file': image_file, 'time': image_process_time}
             
-        # Compare with ground truth
         ground_truth = annotations_dict.get(original_filename)
         clean_ground_truth = clean_license_plate_text(ground_truth) if ground_truth else None
         is_correct = False
@@ -159,7 +144,6 @@ def process_detected_plates(output_dir, annotations_dict, lang='en'):
             'process_time': image_process_time
         })
         
-    # Calculate stats
     accuracy = (results['correct'] / results['total']) * 100 if results['total'] > 0 else 0
     total_execution_time = time.time() - total_start_time
     results['timing']['total_time'] = total_execution_time
