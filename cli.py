@@ -3,45 +3,40 @@ import time
 from pathlib import Path
 from plate.license_plate_detector import detect_and_save_license_plates
 from processing.detected_plates import process_detected_plates
-from processing.dataset import get_ue_kat_dataset
+from source.dataset import get_ue_kat_dataset
 from source.annotations_xml import load_annotations_dict
 from test.calculate_final_grade import calculate_final_grade
 
 
 def run_license_plate_pipeline(input_dir=None, output_dir=None, annotations_file=None, conf_threshold=0.25, lang='en'):
-    overall_start_time = time.time()
-    
+    # Setup paths and defaults
     if input_dir is None:
         dataset = get_ue_kat_dataset()
         input_dir = dataset["photos"]
-
         if annotations_file is None:
             annotations_file = dataset["annotations"]
 
     input_path = Path(input_dir)
-
-    if output_dir is None:
-        output_path = input_path.parent / "detected_plates"
-    else:
-        output_path = Path(output_dir)
+    output_path = Path(output_dir) if output_dir else input_path.parent / "detected_plates"
 
     print(f"Pipeline started with input: {input_path}")
+
+    # Measure total pipeline time
+    overall_start_time = time.time()
     
+    # Step 1: Detect and save license plates
     detection_count, detection_time, _ = detect_and_save_license_plates(input_path, output_path, conf_threshold)
     
-    annotations_dict = {}
-    if annotations_file:
-        annotations_dict = load_annotations_dict(annotations_file)
-    
+    # Step 2: Load annotations and process plates with OCR
+    annotations_dict = load_annotations_dict(annotations_file) if annotations_file else {}
     ocr_results = process_detected_plates(output_path, annotations_dict, lang)
     
+    # Calculate and print final metrics
     overall_time = time.time() - overall_start_time
     num_images = len([f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']])
     avg_time_per_image = overall_time / num_images if num_images > 0 else 0
     estimated_time_100 = avg_time_per_image * 100
-    
     accuracy = (ocr_results['correct'] / ocr_results['total']) * 100 if ocr_results['total'] > 0 else 0
-    
     final_grade = calculate_final_grade(accuracy, estimated_time_100)
     
     print("\n" + "="*50)

@@ -1,5 +1,5 @@
 import xml.etree.ElementTree as ET
-from processing.dataset import get_ue_kat_dataset
+from source.dataset import get_ue_kat_dataset
 
 def load_annotations_dict(annotation_file):
     annotations_dict = {}
