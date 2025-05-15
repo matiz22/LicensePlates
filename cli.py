@@ -24,6 +24,10 @@ def run_license_plate_pipeline(input_dir=None, output_dir=None, annotations_file
     # Measure total pipeline time
     overall_start_time = time.time()
     
+    # Count total input files first for accurate accuracy calculation
+    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']
+    num_images = len([f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in image_extensions])
+    
     # Step 1: Detect and save license plates
     detection_count, detection_time, _ = detect_and_save_license_plates(input_path, output_path, conf_threshold)
     
@@ -33,18 +37,23 @@ def run_license_plate_pipeline(input_dir=None, output_dir=None, annotations_file
     
     # Calculate and print final metrics
     overall_time = time.time() - overall_start_time
-    num_images = len([f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']])
     avg_time_per_image = overall_time / num_images if num_images > 0 else 0
     estimated_time_100 = avg_time_per_image * 100
-    accuracy = (ocr_results['correct'] / ocr_results['total']) * 100 if ocr_results['total'] > 0 else 0
+    
+    # Updated: Calculate accuracy based on number of input files instead of detected plates
+    accuracy = (ocr_results['correct'] / num_images) * 100 if num_images > 0 else 0
+    
     final_grade = calculate_final_grade(accuracy, estimated_time_100)
     
     print("\n" + "="*50)
     print(f"OVERALL PIPELINE SUMMARY")
+    print(f"Total input images: {num_images}")
+    print(f"Detected plates: {detection_count}")
+    print(f"Correctly read plates: {ocr_results['correct']}")
     print(f"Total execution time: {overall_time:.2f}s")
     print(f"Average time per image: {avg_time_per_image:.4f}s")
     print(f"Estimated time for 100 images: {estimated_time_100:.2f}s")
-    print(f"Accuracy: {accuracy:.2f}%")
+    print(f"Accuracy: {accuracy:.2f}% (correctly read / total input files)")
     print(f"FINAL GRADE: {final_grade}")
     print("="*50)
     

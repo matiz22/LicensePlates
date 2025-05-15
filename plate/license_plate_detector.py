@@ -1,5 +1,6 @@
 import cv2
 import time
+import torch
 from pathlib import Path
 from ultralytics import YOLO
 
@@ -15,29 +16,68 @@ def detect_and_save_license_plates(input_dir, output_dir=None, conf_threshold=0.
     start_time_total = time.time()
     model = YOLO("model/license_plate_detector.pt")
     
+    # Performance optimization: Set model to inference mode
+    model.model.eval()
+    torch.set_grad_enabled(False)
+    if torch.cuda.is_available():
+        # Optimize CUDA performance
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = False
+    
     image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']
     image_files = [f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in image_extensions]
     
     count = 0
     
-    for img_path in image_files:
-        img = cv2.imread(str(img_path))
-        if img is None:
+    # Process images in batches for better performance
+    batch_size = 4  # Adjust based on available GPU memory
+    for i in range(0, len(image_files), batch_size):
+        batch_paths = image_files[i:i+batch_size]
+        batch_images = []
+        batch_originals = []
+        
+        for img_path in batch_paths:
+            img = cv2.imread(str(img_path))
+            if img is not None:
+                batch_images.append(img)
+                batch_originals.append((img_path, img))
+            
+        if not batch_images:
             continue
+            
+        # Process the batch at once
+        results = model(batch_images, conf=conf_threshold)
         
-        results = model(img, conf=conf_threshold)
-        
-        for i, result in enumerate(results):
+        for idx, result in enumerate(results):
+            img_path, original_img = batch_originals[idx]
             boxes = result.boxes
-            for j, box in enumerate(boxes):
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+            
+            if len(boxes) == 0:
+                continue
                 
-                plate_img = img[y1:y2, x1:x2]
-                
-                output_file_path = output_path / img_path.name
-                
-                cv2.imwrite(str(output_file_path), plate_img)
-                count += 1
+            for box in boxes:
+                # Extract box coordinates with error handling
+                try:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                    
+                    # Ensure coordinates are valid to prevent crashes
+                    h, w = original_img.shape[:2]
+                    x1, y1 = max(0, x1), max(0, y1)
+                    x2, y2 = min(w, x2), min(h, y2)
+                    
+                    if x2 <= x1 or y2 <= y1:
+                        continue  # Skip invalid boxes
+                        
+                    plate_img = original_img[y1:y2, x1:x2]
+                    output_file_path = output_path / img_path.name
+                    cv2.imwrite(str(output_file_path), plate_img)
+                    count += 1
+                    
+                    # Once we find a plate for this image, we can skip checking other boxes
+                    break
+                except (IndexError, ValueError) as e:
+                    # Skip problematic boxes
+                    continue
     
     total_elapsed_time = time.time() - start_time_total
     
@@ -49,15 +89,3 @@ def detect_and_save_license_plates(input_dir, output_dir=None, conf_threshold=0.
     print(f"Detection Time: {total_elapsed_time:.2f}s (avg: {avg_time_per_image:.4f}s/img, est. 100 imgs: {estimated_time_100:.2f}s)")
     
     return count, total_elapsed_time, avg_time_per_image
-
-if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Detect and save license plates from images")
-    parser.add_argument("--input", "-i", required=True, help="Directory containing images")
-    parser.add_argument("--output", "-o", help="Directory to save detected license plates")
-    parser.add_argument("--conf", "-c", type=float, default=0.25, help="Confidence threshold")
-    
-    args = parser.parse_args()
-    
-    detect_and_save_license_plates(args.input, args.output, args.conf)
