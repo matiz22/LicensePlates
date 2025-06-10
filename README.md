@@ -5,7 +5,7 @@ This project implements a pipeline for detecting license plates in images and pe
 ## Features
 
 - License plate detection using YOLOv8
-- OCR using PaddleOCR
+- OCR using fast-alpr
 - Support for different languages
 - Performance metrics tracking
 - Automatic result validation against ground truth
@@ -20,7 +20,7 @@ cd LicensePlates
 
 2. Install the required dependencies:
 ```bash
-pip install ultralytics paddleocr opencv-python kagglehub
+pip install ultralytics fast-alpr opencv-python kagglehub
 ```
 
 ## Usage
@@ -69,7 +69,9 @@ For license plate detection, we utilize a custom YOLOv8 model that was trained o
 The license plate detector model achieves high accuracy in detecting license plates across different lighting conditions and angles.
 
 ### OCR Processing
-Once license plates are detected, we use PaddleOCR to recognize the text on the license plates. This powerful OCR engine works well with the specific characteristics of license plate text.
+Once license plates are detected, we use fast-alpr to recognize the text on the license plates. This efficient OCR engine is specifically designed for license plate text recognition and offers high performance and accuracy. It combines license plate detection and OCR in a single pipeline.
+
+fast-alpr uses ONNX-optimized models for both detection and character recognition, making it highly efficient for license plate reading tasks.
 
 ## Performance Metrics
 
@@ -83,7 +85,6 @@ The pipeline measures:
 ## References
 
 - [Muhammad-Zeerak-Khan/Automatic-License-Plate-Recognition-using-YOLOv8](https://github.com/Muhammad-Zeerak-Khan/Automatic-License-Plate-Recognition-using-YOLOv8)
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)
+- [fast-alpr](https://github.com/ankandrew/fast-alpr) - High-performance, customizable ALPR system
 - [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics)
 - [Poland Vehicle License Plate Dataset](https://www.kaggle.com/datasets/piotrstefaskiue/poland-vehicle-license-plate-dataset)
-

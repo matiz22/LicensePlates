@@ -3,7 +3,7 @@ import time
 import cv2
 import numpy as np
 from pathlib import Path
-from paddleocr import PaddleOCR
+from fast_alpr import ALPR
 
 from ocr_utils.clean_plate import clean_license_plate_text
 from ocr_utils.validate_registration import validate_registration
@@ -18,17 +18,23 @@ def preprocess_image(image_path):
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
 
-def process_ocr_results(ocr_result, best_conf=0, detected_text="", raw_detected_text=""):
-    if not ocr_result or not isinstance(ocr_result, list) or not ocr_result[0]:
+def process_alpr_results(alpr_results):
+    """
+    Process results from fast-alpr
+    """
+    best_conf = 0
+    detected_text = ""
+    raw_detected_text = ""
+    
+    if not alpr_results:
         return best_conf, detected_text, raw_detected_text
     
-    results_list = ocr_result[0] if isinstance(ocr_result[0], list) else ocr_result
-    for line in results_list:
-        if not isinstance(line, list) or len(line) <= 1 or not isinstance(line[1], tuple):
+    for result in alpr_results:
+        if not hasattr(result, 'ocr') or not result.ocr or not result.ocr.text:
             continue
             
-        confidence = line[1][1]
-        text = line[1][0]
+        confidence = result.ocr.confidence
+        text = result.ocr.text
         cleaned_text = clean_license_plate_text(text.strip())
         
         if len(cleaned_text) < 5 or len(cleaned_text) > 8:
@@ -44,7 +50,12 @@ def process_ocr_results(ocr_result, best_conf=0, detected_text="", raw_detected_
 
 def process_detected_plates(output_dir, annotations_dict, lang='en'):
     total_start_time = time.time()
-    ocr = PaddleOCR(use_gpu=True, use_angle_cls=True, lang=lang, show_log=False)
+
+    alpr = ALPR(
+        detector_model="yolo-v9-t-256-license-plate-end2end",
+        ocr_model="global-plates-mobile-vit-v2-model",
+    )
+    
     results = {
         'total': 0,
         'correct': 0,
@@ -79,29 +90,30 @@ def process_detected_plates(output_dir, annotations_dict, lang='en'):
             if img is None:
                 raise Exception("Image not found")
             
-            variants = [img]
+            alpr_results = alpr.predict(img)
+            print(alpr_results)
+            best_conf, detected_text, raw_detected_text = process_alpr_results(alpr_results)
+
             
-            binary_img = preprocess_image(image_path)
-            if binary_img is not None:
-                variants.append(binary_img)
-            
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-            sharp_gray = cv2.filter2D(gray, -1, kernel)
-            sharp_img = cv2.cvtColor(sharp_gray, cv2.COLOR_GRAY2BGR)
-            variants.append(sharp_img)
-            
-            for v in variants:
-                success, encoded_img = cv2.imencode('.jpg', v)
-                if not success:
-                    continue
+            # If we didn't get a good result, try with preprocessed variants
+            if best_conf < 0.5:  # Threshold can be adjusted
+                # Try with binary image
+                binary_img = preprocess_image(image_path)
+                if binary_img is not None:
+                    binary_results = alpr.predict(binary_img)
+                    curr_best_conf, curr_detected_text, curr_raw_detected_text = process_alpr_results(binary_results)
+                    if curr_best_conf > best_conf:
+                        best_conf = curr_best_conf
+                        detected_text = curr_detected_text
+                        raw_detected_text = curr_raw_detected_text
                 
-                img_bytes = np.array(encoded_img).tobytes()
-                ocr_result = ocr.ocr(img_bytes, cls=True)
-                
-                curr_best_conf, curr_detected_text, curr_raw_detected_text = process_ocr_results(
-                    ocr_result, 0, "", "")
-                
+                # Try with sharpened image
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+                sharp_gray = cv2.filter2D(gray, -1, kernel)
+                sharp_img = cv2.cvtColor(sharp_gray, cv2.COLOR_GRAY2BGR)
+                sharp_results = alpr.predict(sharp_img)
+                curr_best_conf, curr_detected_text, curr_raw_detected_text = process_alpr_results(sharp_results)
                 if curr_best_conf > best_conf:
                     best_conf = curr_best_conf
                     detected_text = curr_detected_text
@@ -110,6 +122,7 @@ def process_detected_plates(output_dir, annotations_dict, lang='en'):
         except Exception as e:
             detected_text = ""
             raw_detected_text = ""
+            print(f"Error processing {image_file}: {str(e)}")
             
         image_process_time = time.time() - image_start_time
         total_ocr_time += image_process_time
@@ -140,6 +153,7 @@ def process_detected_plates(output_dir, annotations_dict, lang='en'):
             'cleaned_detected_text': detected_text,
             'ground_truth': ground_truth,
             'cleaned_ground_truth': clean_ground_truth,
+            'confidence': best_conf,
             'is_correct': is_correct,
             'process_time': image_process_time
         })
@@ -155,3 +169,4 @@ def process_detected_plates(output_dir, annotations_dict, lang='en'):
     print(f"OCR Time: {total_ocr_time:.2f}s (avg: {results['timing']['average_per_image']:.4f}s/img, est. 100 imgs: {estimated_time_100:.2f}s)")
     
     return results
+
